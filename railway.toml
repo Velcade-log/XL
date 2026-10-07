@@ -1,5 +1,7 @@
+[phases.setup]
+nixPkgs = ["...", "go"]
+
 [build]
-builder = "nixpacks"
 buildCommand = "cd survey-system/backend && go build -o main ."
 
 [deploy]
