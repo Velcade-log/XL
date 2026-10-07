@@ -4,6 +4,8 @@ package main
 
 import (
 	"log"
+	"net/http"
+	"path/filepath"
 	"survey-system/config"
 	"survey-system/database"
 	"survey-system/handlers"
@@ -68,12 +70,25 @@ func main() {
 	r.GET("/", func(c *gin.Context) {
 		c.Redirect(302, "/login.html")
 	})
-	// 托管前端目录下的所有 HTML/CSS/JS 文件
-	r.StaticFile("/login.html", frontendDir+"/login.html")
-	r.StaticFile("/index.html", frontendDir+"/index.html")
-	r.StaticFile("/survey.html", frontendDir+"/survey.html")
-	r.StaticFile("/answer-list.html", frontendDir+"/answer-list.html")
-	r.StaticFile("/css/style.css", frontendDir+"/css/style.css")
+
+	// 手动托管前端页面（避免 StaticFile 对 index.html 的自动重定向）
+	pages := []string{"login.html", "index.html", "survey.html", "answer-list.html"}
+	for _, page := range pages {
+		p := page
+		r.GET("/"+p, func(c *gin.Context) {
+			c.File(filepath.Join(frontendDir, p))
+		})
+	}
+
+	// 托管 CSS
+	r.GET("/css/style.css", func(c *gin.Context) {
+		c.File(filepath.Join(frontendDir, "css/style.css"))
+	})
+
+	// favicon 404 避免报错
+	r.GET("/favicon.ico", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
 
 	// 7. 启动服务
 	port := config.AppConfig.ServerPort
