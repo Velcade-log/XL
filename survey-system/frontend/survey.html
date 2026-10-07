@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>填写问卷 - 问卷系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <div class="header">
+        <div class="container">
+            <h1>📋 问卷系统</h1>
+            <div class="user-info">
+                <span id="usernameDisplay"></span>
+                <button class="btn btn-logout" onclick="logout()">退出登录</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 返回链接 -->
+        <a href="index.html" class="back-link">← 返回问卷列表</a>
+
+        <!-- 问卷详情 -->
+        <div id="surveyContainer" class="survey-detail">
+            <!-- 动态渲染 -->
+            <p>加载中...</p>
+        </div>
+    </div>
+
+    <script>
+        // 后端 API 地址
+        const API_BASE = 'http://localhost:8080/api';
+
+        // 检查登录状态
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = 'login.html';
+        }
+
+        // 显示用户名
+        const username = localStorage.getItem('username');
+        document.getElementById('usernameDisplay').textContent = username;
+
+        // 获取 URL 参数中的问卷 ID
+        const urlParams = new URLSearchParams(window.location.search);
+        const surveyID = urlParams.get('id');
+
+        let currentSurvey = null;
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', function() {
+            if (!surveyID) {
+                document.getElementById('surveyContainer').innerHTML =
+                    '<p style="color: #ff4d4f;">缺少问卷ID参数</p>';
+                return;
+            }
+            loadSurvey();
+        });
+
+        // 退出登录
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user_id');
+            localStorage.removeItem('username');
+            window.location.href = 'login.html';
+        }
+
+        // 加载问卷详情
+        async function loadSurvey() {
+            try {
+                const response = await fetch(`${API_BASE}/surveys/${surveyID}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+
+                if (response.status === 404) {
+                    document.getElementById('surveyContainer').innerHTML =
+                        '<p style="color: #ff4d4f;">问卷不存在</p>';
+                    return;
+                }
+
+                const survey = await response.json();
+                currentSurvey = survey;
+
+                renderSurvey(survey);
+
+                // 加载用户已有的答卷，用于回填
+                loadMyAnswer();
+            } catch (err) {
+                console.error(err);
+                document.getElementById('surveyContainer').innerHTML =
+                    '<p style="color: #ff4d4f;">加载失败，请检查网络连接</p>';
+            }
+        }
+
+        // 渲染问卷
+        function renderSurvey(survey) {
+            const questions = survey.questions || [];
+
+            let questionsHtml = '';
+            questions.forEach((q, index) => {
+                questionsHtml += `
+                    <div class="question-item">
+                        <label for="${q.id}">${index + 1}. ${escapeHtml(q.title)}</label>
+                        ${q.type === 'text' ? `
+                            <textarea id="${q.id}" name="${q.id}" rows="3" placeholder="请输入您的答案"></textarea>
+                        ` : `
+                            <input type="text" id="${q.id}" name="${q.id}" placeholder="请输入您的答案">
+                        `}
+                    </div>
+                `;
+            });
+
+            document.getElementById('surveyContainer').innerHTML = `
+                <h2>${escapeHtml(survey.title)}</h2>
+                <p class="desc">${escapeHtml(survey.description || '暂无描述')}</p>
+                <form id="surveyForm">
+                    ${questionsHtml}
+                    <div class="submit-section">
+                        <button type="button" class="btn btn-primary" onclick="submitAnswer()">提交答卷</button>
+                        <span id="submitMsg" class="success-message" style="display: none;">✓ 保存成功</span>
+                    </div>
+                </form>
+            `;
+        }
+
+        // 加载当前用户的答卷（用于回填表单）
+        async function loadMyAnswer() {
+            try {
+                const response = await fetch(`${API_BASE}/surveys/${surveyID}/my-answer`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (data.answer && data.answer.answer) {
+                    // 回填答案到表单
+                    fillAnswers(data.answer.answer);
+                }
+            } catch (err) {
+                console.error('加载答卷失败:', err);
+            }
+        }
+
+        // 回填答案
+        function fillAnswers(answerData) {
+            const questions = currentSurvey.questions || [];
+            questions.forEach(q => {
+                const elem = document.getElementById(q.id);
+                if (elem && answerData[q.id] !== undefined) {
+                    elem.value = answerData[q.id];
+                }
+            });
+        }
+
+        // 提交答卷
+        async function submitAnswer() {
+            const questions = currentSurvey.questions || [];
+            const answer = {};
+
+            // 收集所有答案
+            questions.forEach(q => {
+                const elem = document.getElementById(q.id);
+                if (elem) {
+                    answer[q.id] = elem.value.trim();
+                }
+            });
+
+            const submitMsg = document.getElementById('submitMsg');
+            submitMsg.style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_BASE}/surveys/${surveyID}/answer`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ answer })
+                });
+
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    submitMsg.textContent = '✓ 保存成功';
+                    submitMsg.style.color = '#52c41a';
+                    submitMsg.style.display = 'inline';
+
+                    // 3 秒后隐藏提示
+                    setTimeout(() => {
+                        submitMsg.style.display = 'none';
+                    }, 3000);
+                } else {
+                    submitMsg.textContent = data.error || '提交失败';
+                    submitMsg.style.color = '#ff4d4f';
+                    submitMsg.style.display = 'inline';
+                }
+            } catch (err) {
+                submitMsg.textContent = '网络错误';
+                submitMsg.style.color = '#ff4d4f';
+                submitMsg.style.display = 'inline';
+                console.error(err);
+            }
+        }
+
+        // HTML 转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(text));
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

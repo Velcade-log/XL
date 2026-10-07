@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>答卷列表 - 问卷系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <div class="header">
+        <div class="container">
+            <h1>📋 问卷系统</h1>
+            <div class="user-info">
+                <span id="usernameDisplay"></span>
+                <button class="btn btn-logout" onclick="logout()">退出登录</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 返回链接 -->
+        <a href="index.html" class="back-link">← 返回问卷列表</a>
+
+        <!-- 页面标题 -->
+        <div class="page-title">
+            <h2 id="surveyTitle">答卷列表</h2>
+        </div>
+
+        <!-- 答卷列表容器 -->
+        <div id="answerList" class="answer-list">
+            <p>加载中...</p>
+        </div>
+    </div>
+
+    <script>
+        // 后端 API 地址
+        const API_BASE = 'http://localhost:8080/api';
+
+        // 检查登录状态
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = 'login.html';
+        }
+
+        // 显示用户名
+        const username = localStorage.getItem('username');
+        document.getElementById('usernameDisplay').textContent = username;
+
+        // 获取 URL 参数中的问卷 ID
+        const urlParams = new URLSearchParams(window.location.search);
+        const surveyID = urlParams.get('id');
+
+        // 存储问卷题目信息，用于渲染答案时显示题目标题
+        let surveyQuestions = [];
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', function() {
+            if (!surveyID) {
+                document.getElementById('answerList').innerHTML =
+                    '<p style="color: #ff4d4f;">缺少问卷ID参数</p>';
+                return;
+            }
+            // 先加载问卷信息（获取题目）
+            loadSurveyInfo();
+            // 再加载答卷列表
+            loadAnswers();
+        });
+
+        // 退出登录
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user_id');
+            localStorage.removeItem('username');
+            window.location.href = 'login.html';
+        }
+
+        // 加载问卷基本信息（获取题目列表用于渲染答案）
+        async function loadSurveyInfo() {
+            try {
+                const response = await fetch(`${API_BASE}/surveys/${surveyID}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+
+                if (response.ok) {
+                    const survey = await response.json();
+                    surveyQuestions = survey.questions || [];
+                    document.getElementById('surveyTitle').textContent =
+                        `${survey.title} - 答卷列表`;
+                }
+            } catch (err) {
+                console.error('加载问卷信息失败:', err);
+            }
+        }
+
+        // 加载答卷列表
+        async function loadAnswers() {
+            try {
+                const response = await fetch(`${API_BASE}/surveys/${surveyID}/answers`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+
+                if (response.status === 403) {
+                    // 无权限访问
+                    document.getElementById('answerList').innerHTML = `
+                        <div class="empty-state">
+                            <p style="color: #ff4d4f;">您无权查看该问卷的答卷</p>
+                            <p style="font-size: 13px; margin-top: 8px; color: #999;">
+                                只有问卷发布者才能查看答卷列表
+                            </p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                if (response.status === 404) {
+                    document.getElementById('answerList').innerHTML =
+                        '<p style="color: #ff4d4f;">问卷不存在</p>';
+                    return;
+                }
+
+                const data = await response.json();
+                renderAnswers(data.answers || []);
+            } catch (err) {
+                console.error(err);
+                document.getElementById('answerList').innerHTML = `
+                    <div class="empty-state">
+                        <p>加载失败，请检查网络连接和后端服务</p>
+                    </div>
+                `;
+            }
+        }
+
+        // 渲染答卷列表
+        function renderAnswers(answers) {
+            const container = document.getElementById('answerList');
+
+            if (answers.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <p>暂无答卷</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = answers.map(answer => {
+                const updatedAt = new Date(answer.updated_at).toLocaleString('zh-CN');
+                const answerData = answer.answer || {};
+
+                // 渲染每道题的答案
+                let answerHtml = '';
+                // 如果有题目信息，按题目顺序渲染
+                if (surveyQuestions.length > 0) {
+                    surveyQuestions.forEach((q, index) => {
+                        const value = answerData[q.id] !== undefined ? answerData[q.id] : '';
+                        answerHtml += `
+                            <div class="answer-row">
+                                <span class="q-title">${index + 1}. ${escapeHtml(q.title)}</span>
+                                <span class="q-value">${escapeHtml(value || '（未填写）')}</span>
+                            </div>
+                        `;
+                    });
+                } else {
+                    // 没有题目信息时，直接展示键值对
+                    for (const [key, value] of Object.entries(answerData)) {
+                        answerHtml += `
+                            <div class="answer-row">
+                                <span class="q-title">${escapeHtml(key)}</span>
+                                <span class="q-value">${escapeHtml(value || '')}</span>
+                            </div>
+                        `;
+                    }
+                }
+
+                return `
+                    <div class="answer-card">
+                        <div class="answer-header">
+                            <span class="answerer">👤 ${escapeHtml(answer.username)}</span>
+                            <span class="answer-time">${updatedAt}</span>
+                        </div>
+                        <div class="answer-content">
+                            ${answerHtml}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // HTML 转义
+        function escapeHtml(text) {
+            if (text === null || text === undefined) {
+                return '';
+            }
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(String(text)));
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

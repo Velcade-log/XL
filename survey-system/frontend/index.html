@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>问卷列表 - 问卷系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <div class="header">
+        <div class="container">
+            <h1>📋 问卷系统</h1>
+            <div class="user-info">
+                <span id="usernameDisplay"></span>
+                <button class="btn btn-logout" onclick="logout()">退出登录</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 页面标题 -->
+        <div class="page-title">
+            <h2>问卷列表</h2>
+            <button class="btn btn-primary" onclick="openCreateModal()">+ 发布问卷</button>
+        </div>
+
+        <!-- 问卷列表容器 -->
+        <div id="surveyList" class="survey-list">
+            <!-- 动态渲染 -->
+        </div>
+    </div>
+
+    <!-- 新建问卷模态框 -->
+    <div id="createModal" class="modal-overlay">
+        <div class="modal">
+            <h3>发布新问卷</h3>
+
+            <div class="form-group">
+                <label>问卷描述</label>
+                <textarea id="surveyDesc" rows="3" placeholder="说点什么，介绍一下这份问卷..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>题目列表</label>
+                <button type="button" class="btn-add-question" onclick="loadPresetQuestions()" style="margin-bottom: 12px;">📋 加载预设题目</button>
+                <div id="questionList"></div>
+                <button type="button" class="btn-add-question" onclick="addQuestion()">+ 添加题目</button>
+            </div>
+
+            <div id="createError" class="error-message" style="display: none;"></div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeCreateModal()">取消</button>
+                <button class="btn btn-primary" onclick="submitSurvey()">发布</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 后端 API 地址
+        const API_BASE = 'http://localhost:8080/api';
+
+        // 检查登录状态
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = 'login.html';
+        }
+
+        // 显示当前用户名
+        const username = localStorage.getItem('username');
+        const userID = parseInt(localStorage.getItem('user_id'));
+        document.getElementById('usernameDisplay').textContent = username;
+
+        // 题目计数器
+        let questionCount = 0;
+
+        // 预设题目
+        const PRESET_QUESTIONS = [
+            '你对我的第一印象',
+            '你对我的现印象/在你眼里我是什么样子?',
+            '和我相处你最直观的感受是什么?',
+            '在你眼里我是什么性格?',
+            '你有什么建议给我吗?/或者想对我说的话',
+            '你最想和我成为什么关系?',
+            '最后的最后请写几句话给我吧我会认真着完'
+        ];
+
+        // 页面加载时获取问卷列表
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSurveys();
+        });
+
+        // 退出登录
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user_id');
+            localStorage.removeItem('username');
+            window.location.href = 'login.html';
+        }
+
+        // 加载问卷列表
+        async function loadSurveys() {
+            try {
+                const response = await fetch(`${API_BASE}/surveys`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+
+                const data = await response.json();
+                renderSurveys(data.surveys || []);
+            } catch (err) {
+                console.error(err);
+                document.getElementById('surveyList').innerHTML =
+                    '<div class="empty-state"><p>加载失败，请检查网络连接和后端服务</p></div>';
+            }
+        }
+
+        // 渲染问卷列表
+        function renderSurveys(surveys) {
+            const container = document.getElementById('surveyList');
+
+            if (surveys.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <p>暂无问卷，点击右上角"发布问卷"创建第一份问卷吧</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = surveys.map(survey => {
+                // 判断当前用户是否是问卷发布者（仅控制 UI 显示，真实权限后端校验）
+                const isCreator = survey.creator_id === userID;
+
+                const createdAt = new Date(survey.created_at).toLocaleString('zh-CN');
+
+                return `
+                    <div class="survey-card">
+                        <h3>${escapeHtml(survey.title)}</h3>
+                        <p class="description">${escapeHtml(survey.description || '暂无描述')}</p>
+                        <div class="meta">
+                            <span>发布人：${escapeHtml(survey.creator_name)} · ${createdAt}</span>
+                            <div class="actions">
+                                <a href="survey.html?id=${survey.id}" class="btn btn-primary btn-small">填写问卷</a>
+                                ${isCreator ? `<a href="answer-list.html?id=${survey.id}" class="btn btn-secondary btn-small">查看答卷</a>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ========== 新建问卷相关 ==========
+
+        function openCreateModal() {
+            document.getElementById('createModal').classList.add('active');
+        }
+
+        function closeCreateModal() {
+            document.getElementById('createModal').classList.remove('active');
+            // 重置表单
+            document.getElementById('surveyDesc').value = '';
+            document.getElementById('questionList').innerHTML = '';
+            document.getElementById('createError').style.display = 'none';
+            questionCount = 0;
+        }
+
+        // 加载预设题目
+        function loadPresetQuestions() {
+            // 清空现有题目
+            document.getElementById('questionList').innerHTML = '';
+            questionCount = 0;
+
+            // 逐一添加预设题目
+            PRESET_QUESTIONS.forEach(title => {
+                questionCount++;
+                const questionList = document.getElementById('questionList');
+                const div = document.createElement('div');
+                div.className = 'question-editor';
+                div.id = `q-${questionCount}`;
+                div.innerHTML = `
+                    <div class="question-editor-header">
+                        <span>题目 ${questionCount}</span>
+                        <button type="button" class="btn-remove" onclick="removeQuestion(${questionCount})">删除</button>
+                    </div>
+                    <input type="text" id="q-title-${questionCount}" value="${escapeHtml(title)}" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
+                `;
+                questionList.appendChild(div);
+            });
+        }
+
+        function addQuestion() {
+            questionCount++;
+            const questionList = document.getElementById('questionList');
+            const div = document.createElement('div');
+            div.className = 'question-editor';
+            div.id = `q-${questionCount}`;
+            div.innerHTML = `
+                <div class="question-editor-header">
+                    <span>题目 ${questionCount}</span>
+                    <button type="button" class="btn-remove" onclick="removeQuestion(${questionCount})">删除</button>
+                </div>
+                <input type="text" id="q-title-${questionCount}" placeholder="请输入题目标题" style="width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px;">
+            `;
+            questionList.appendChild(div);
+        }
+
+        function removeQuestion(id) {
+            const elem = document.getElementById(`q-${id}`);
+            if (elem) {
+                elem.remove();
+            }
+        }
+
+        async function submitSurvey() {
+            const description = document.getElementById('surveyDesc').value.trim();
+
+            if (!description) {
+                showCreateError('请输入问卷描述');
+                return;
+            }
+
+            // 标题用描述的前 20 个字（后端 title 字段必填）
+            const title = description.length > 20 ? description.substring(0, 20) + '...' : description;
+
+            // 收集所有题目
+            const questions = [];
+            const questionEditors = document.querySelectorAll('.question-editor');
+            let qIndex = 1;
+
+            questionEditors.forEach(editor => {
+                const input = editor.querySelector('input[type="text"]');
+                const qTitle = input.value.trim();
+                if (qTitle) {
+                    questions.push({
+                        id: `q${qIndex}`,
+                        title: qTitle,
+                        type: 'text'
+                    });
+                    qIndex++;
+                }
+            });
+
+            if (questions.length === 0) {
+                showCreateError('至少添加一道有效题目');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/surveys`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        title,
+                        description,
+                        questions
+                    })
+                });
+
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    closeCreateModal();
+                    loadSurveys(); // 刷新列表
+                } else {
+                    showCreateError(data.error || '创建失败');
+                }
+            } catch (err) {
+                showCreateError('网络错误');
+                console.error(err);
+            }
+        }
+
+        function showCreateError(msg) {
+            const elem = document.getElementById('createError');
+            elem.textContent = msg;
+            elem.style.display = 'block';
+        }
+
+        // HTML 转义，防止 XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(text));
+            return div.innerHTML;
+        }
+
+        // 点击模态框背景关闭
+        document.getElementById('createModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeCreateModal();
+            }
+        });
+    </script>
+</body>
+</html>
