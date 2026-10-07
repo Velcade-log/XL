@@ -1,9 +1,6 @@
-[phases.setup]
-nixPkgs = ["...", "go"]
-
 [build]
-buildCommand = "cd survey-system/backend && go build -o main ."
+builder = "docker"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "./survey-system/backend/main"
 sleepApplication = true
