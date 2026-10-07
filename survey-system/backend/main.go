@@ -73,7 +73,7 @@ func main() {
 	r.StaticFile("/index.html", frontendDir+"/index.html")
 	r.StaticFile("/survey.html", frontendDir+"/survey.html")
 	r.StaticFile("/answer-list.html", frontendDir+"/answer-list.html")
-	r.StaticFile("/style.css", frontendDir+"/style.css")
+	r.StaticFile("/css/style.css", frontendDir+"/css/style.css")
 
 	// 7. 启动服务
 	port := config.AppConfig.ServerPort
