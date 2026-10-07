@@ -27,7 +27,7 @@ func LoadConfig() {
 		JWTSecret: getEnv("JWT_SECRET", "survey-system-secret-2024-abcxyz"),
 
 		// ========== 服务端口 ==========
-		ServerPort: getEnv("PORT", "88888"),
+		ServerPort: getEnv("PORT", "8888"),
 	}
 }
 
