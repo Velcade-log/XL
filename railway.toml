@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+buildCommand = "cd survey-system/backend && go build -o main ."
+
+[deploy]
+startCommand = "./survey-system/backend/main"
+sleepApplication = true
