@@ -12,6 +12,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// frontendDir 前端静态文件目录（相对于 backend 目录）
+const frontendDir = "../frontend"
+
 func main() {
 	// 1. 加载配置
 	config.LoadConfig()
@@ -60,10 +63,23 @@ func main() {
 		}
 	}
 
-	// 6. 启动服务
+	// 6. 托管前端静态页面
+	// 访问根路径直接跳转到登录页
+	r.GET("/", func(c *gin.Context) {
+		c.Redirect(302, "/login.html")
+	})
+	// 托管前端目录下的所有 HTML/CSS/JS 文件
+	r.StaticFile("/login.html", frontendDir+"/login.html")
+	r.StaticFile("/index.html", frontendDir+"/index.html")
+	r.StaticFile("/survey.html", frontendDir+"/survey.html")
+	r.StaticFile("/answer-list.html", frontendDir+"/answer-list.html")
+	r.StaticFile("/style.css", frontendDir+"/style.css")
+
+	// 7. 启动服务
 	port := config.AppConfig.ServerPort
 	log.Printf("服务启动成功，监听端口 %s", port)
 	log.Printf("API 基础路径: http://localhost:%s/api", port)
+	log.Printf("前端登录页: http://localhost:%s/login.html", port)
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("启动服务失败: %v", err)
 	}
